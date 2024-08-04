@@ -1,0 +1,8 @@
+[package]
+name = "keyboard-mouse"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+winit = "0.30.4"
+enigo = "0.2.1"
