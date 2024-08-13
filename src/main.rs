@@ -34,22 +34,16 @@ impl Eq for WindowMovement {}
 
 #[derive(Debug)]
 enum ChannelData {
-    Movement(WindowMovement, ElementState),
+    Movement(Movement),
 }
 
-fn handle_movement(
-    movements: &mut HashSet<WindowMovement>,
+#[derive(Debug)]
+struct Movement {
     movement: WindowMovement,
     state: ElementState,
-) {
-    match state {
-        Pressed => {
-            movements.insert(movement);
-        }
-        Released => {
-            movements.remove(&movement);
-        }
-    }
+}
+
+fn handle_movement(movements: &mut HashSet<WindowMovement>) {
     let step = 5;
     let (x_pixels, y_pixels) = movements.iter().fold((0, 0), |acc, next| match next {
         WindowMovement::Top => (acc.0, acc.1 - step),
@@ -64,43 +58,56 @@ fn handle_movement(
 fn run_input_handler_thread(receiver: Receiver<ChannelData>) {
     let mut movements: HashSet<WindowMovement> = HashSet::new();
     loop {
-        let received = receiver.try_recv();
+        let received = receiver.recv();
 
         match received {
-            Ok(channel_data) => match channel_data {
-                ChannelData::Movement(movement, state) => {
-                    handle_movement(&mut movements, movement, state)
+            Ok(ChannelData::Movement(Movement { movement, state })) => match state {
+                Pressed => {
+                    movements.insert(movement);
+                }
+                Released => {
+                    movements.remove(&movement);
                 }
             },
             _ => {}
         }
+
+        handle_movement(&mut movements);
         thread::sleep(Duration::from_millis(5));
     }
 }
 
 fn jump(movement: WindowMovement, monitor_size: PhysicalSize<u32>) {
     match movement {
-        WindowMovement::Top => {
-            mouse_handler::jump_mouse_to(monitor_size, |mouse_x, _| mouse_x, |mouse_y, _| mouse_y / 2)
-        }
-        WindowMovement::Down => {
-            mouse_handler::jump_mouse_to(monitor_size, |mouse_x, _| mouse_x, |mouse_y, height| (height + mouse_y) / 2)
-        }
-        WindowMovement::Left => {
-            mouse_handler::jump_mouse_to(monitor_size, |mouse_x, _| mouse_x / 2, |mouse_y, _| mouse_y)
-        }
-        WindowMovement::Right => {
-            mouse_handler::jump_mouse_to(monitor_size, |mouse_x, width| (mouse_x + width) / 2, |mouse_y, _| mouse_y)
-        }
+        WindowMovement::Top => mouse_handler::jump_mouse_to(
+            monitor_size,
+            |mouse_x, _| mouse_x,
+            |mouse_y, _| mouse_y / 2,
+        ),
+        WindowMovement::Down => mouse_handler::jump_mouse_to(
+            monitor_size,
+            |mouse_x, _| mouse_x,
+            |mouse_y, height| (height + mouse_y) / 2,
+        ),
+        WindowMovement::Left => mouse_handler::jump_mouse_to(
+            monitor_size,
+            |mouse_x, _| mouse_x / 2,
+            |mouse_y, _| mouse_y,
+        ),
+        WindowMovement::Right => mouse_handler::jump_mouse_to(
+            monitor_size,
+            |mouse_x, width| (mouse_x + width) / 2,
+            |mouse_y, _| mouse_y,
+        ),
     }
 }
 
 fn map_to_movement(physical_key: PhysicalKey) -> Option<WindowMovement> {
     match physical_key {
-        PhysicalKey::Code(KeyCode::KeyW) => Some(WindowMovement::Top),
-        PhysicalKey::Code(KeyCode::KeyS) => Some(WindowMovement::Down),
-        PhysicalKey::Code(KeyCode::KeyA) => Some(WindowMovement::Left),
-        PhysicalKey::Code(KeyCode::KeyD) => Some(WindowMovement::Right),
+        PhysicalKey::Code(KeyCode::KeyK) => Some(WindowMovement::Top),
+        PhysicalKey::Code(KeyCode::KeyJ) => Some(WindowMovement::Down),
+        PhysicalKey::Code(KeyCode::KeyH) => Some(WindowMovement::Left),
+        PhysicalKey::Code(KeyCode::KeyL) => Some(WindowMovement::Right),
         _ => None,
     }
 }
@@ -123,14 +130,16 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Focused(focus) => {
                 if !focus {
-                    let unwrapped_window = self.window.as_ref().unwrap();
-                    unwrapped_window.focus_window();
+                    match self.window.as_ref() {
+                        Some(w) => w.focus_window(),
+                        _ => {}
+                    }
                 }
             }
-            WindowEvent::RedrawRequested => {
-                let unwrapped_window = self.window.as_ref().unwrap();
-                unwrapped_window.request_redraw();
-            }
+            WindowEvent::RedrawRequested => match self.window.as_ref() {
+                Some(w) => w.request_redraw(),
+                _ => {}
+            },
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -145,7 +154,7 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
-                        physical_key: PhysicalKey::Code(KeyCode::KeyJ),
+                        physical_key: PhysicalKey::Code(KeyCode::KeyG),
                         state: ElementState::Pressed,
                         repeat: false,
                         ..
@@ -165,24 +174,32 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 if let Some(movement) = map_to_movement(physical_key) {
+                    print!("{:?}", movement);
                     if self.jump_mode_enabled {
                         if state == Pressed && !repeat {
-                            let window = self.window.as_ref().unwrap();
-                            let monitor_size =
-                                window.current_monitor().map(|monitor| monitor.size());
+                            let monitor_size = self
+                                .window
+                                .as_ref()
+                                .and_then(|w| w.current_monitor())
+                                .map(|m| m.size());
 
-                            match monitor_size {
-                                Some(size) => jump(movement, size),
-                                None => {}
+                            if let Some(size) = monitor_size {
+                                jump(movement, size);
                             }
                         }
                     } else {
-                        let _ = self.sender.send(ChannelData::Movement(movement, state));
+                        let _ = self
+                            .sender
+                            .send(ChannelData::Movement(Movement { movement, state }));
                     }
                 } else if state == ElementState::Pressed {
                     match physical_key {
-                        PhysicalKey::Code(KeyCode::KeyC) => mouse_handler::click_mouse_button(Button::Left),
-                        PhysicalKey::Code(KeyCode::KeyV) => mouse_handler::click_mouse_button(Button::Right),
+                        PhysicalKey::Code(KeyCode::KeyC) => {
+                            mouse_handler::click_mouse_button(Button::Left)
+                        }
+                        PhysicalKey::Code(KeyCode::KeyV) => {
+                            mouse_handler::click_mouse_button(Button::Right)
+                        }
                         _ => {}
                     }
                 }

@@ -1,13 +1,16 @@
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
 use winit::dpi::PhysicalSize;
 
-
 pub fn move_mouse(x_pixels: i32, y_pixels: i32, coordinate: Coordinate) {
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
     enigo.move_mouse(x_pixels, y_pixels, coordinate).unwrap();
 }
 
-pub fn jump_mouse_to(monitor_size: PhysicalSize<u32>, x_pos: fn(i32, i32) -> i32, y_pos: fn(i32, i32) -> i32) {
+pub fn jump_mouse_to(
+    monitor_size: PhysicalSize<u32>,
+    x_pos: fn(i32, i32) -> i32,
+    y_pos: fn(i32, i32) -> i32,
+) {
     let enigo = Enigo::new(&Settings::default()).unwrap();
     let mouse_location = enigo.location().unwrap();
 
